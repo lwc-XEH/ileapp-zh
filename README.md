@@ -1,5 +1,10 @@
 # iLEAPP Report Localizer (Chinese)
 
+[![CI](https://github.com/lwc-XEH/ileapp-zh/actions/workflows/ci.yml/badge.svg)](https://github.com/lwc-XEH/ileapp-zh/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+
 Turn an [iLEAPP](https://github.com/abrignoni/iLEAPP) forensic report into Chinese — and fold "run the parser" and "get the Chinese report" into a single step.
 
 iLEAPP is a widely used open-source iOS forensic parser, but it has **no Chinese version**: the UI and every report template are hard-coded English. This tool does not modify iLEAPP. It wraps around it:
