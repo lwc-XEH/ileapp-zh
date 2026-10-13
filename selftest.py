@@ -629,9 +629,14 @@ def section_workbench(tmp):
         "exec(compile(open(p, encoding='utf-8').read(), p, 'exec'),\n"
         "     {'__name__': '__main__', '__file__': p})\n"
     )
+    # PYTHONIOENCODING 必须显式给 utf-8：CI 的 Windows runner 是英文
+    # locale（cp1252），子进程往管道里写中文提示时会整体退化为 \uXXXX
+    # 转义，"需要带 tkinter 的 Python" 这个断言就只在中文机器上过得去。
+    # 强制 utf-8 让这条测试与系统 locale 无关。
     r = subprocess.run([sys.executable, "-c", stub], capture_output=True,
                        text=True, encoding="utf-8", errors="replace",
-                       env=dict(os.environ, ILEAPP_ZH_NO_DIALOG="1"))
+                       env=dict(os.environ, ILEAPP_ZH_NO_DIALOG="1",
+                                PYTHONIOENCODING="utf-8"))
     H.eq("缺 tkinter 时退出码为 1", r.returncode, 1)
     H.ok("缺 tkinter 时给出中文提示",
          "tkinter" in r.stderr and "需要带 tkinter 的 Python" in r.stderr,
