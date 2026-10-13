@@ -9,7 +9,7 @@ iLEAPP 官方没有中文版，界面和报告全是英文硬编码。这个工�
 
 ## 快速开始
 
-双击 **`启动工作台.bat`**，然后：
+双击 **`start_workbench.bat`**，然后：
 
 1. **iLEAPP 程序** —— 已自动填好（会自动在上一级目录找 `iLEAPP-2026.4.4\ileapp.exe`），
    换过位置就点「浏览」重新指定
@@ -326,7 +326,7 @@ python verify_localize.py <原报告目录> <汉化后目录>
 
 | 文件 | 作用 |
 | --- | --- |
-| `启动工作台.bat` | **主入口**，双击即开图形界面 |
+| `start_workbench.bat` | **主入口**，双击即开图形界面 |
 | `workbench.py` | 工作台界面 + 编排逻辑（跑 iLEAPP → 自动汉化） |
 | `ileapp_zh.py` | 汉化引擎，也可单独命令行调用 |
 | `dict_ileapp_zh.json` | 词典（可直接编辑） |

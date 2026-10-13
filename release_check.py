@@ -47,8 +47,8 @@ import ileapp_zh  # noqa: E402
 
 # 会被提交的文件（git 可用时以 git 为准，否则用这份白名单）
 FALLBACK_FILES = [
-    ".gitattributes", ".gitignore", "LICENSE", "README.md", "使用说明.md", "简介.md",
-    "启动工作台.bat", "translate_report.bat",
+    ".gitattributes", ".gitignore", "LICENSE", "README.md", "USAGE.zh-CN.md",
+    "start_workbench.bat", "translate_report.bat",
     "workbench.py", "ileapp_zh.py", "build_dict.py", "extract_metadata.py",
     "measure_coverage.py", "verify_localize.py", "selftest.py",
     "audit_report.py", "release_check.py",

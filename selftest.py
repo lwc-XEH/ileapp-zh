@@ -573,7 +573,7 @@ def section_workbench(tmp):
     # 启动脚本：纯 ASCII + CRLF，两条都是 cmd.exe 的硬要求。
     #   非 ASCII —— cmd 按控制台代码页读 .bat，中文路径会变乱码
     #   LF-only  —— 多行括号块会被解析错（实测会把 setlocal 参数拆成命令）
-    for name in ("启动工作台.bat", "translate_report.bat"):
+    for name in ("start_workbench.bat", "translate_report.bat"):
         bat = HERE / name
         if not bat.is_file():
             H.skip(name, "文件不存在")
@@ -585,14 +585,14 @@ def section_workbench(tmp):
         H.ok(f"{name} 是 CRLF 行尾",
              data.count(b"\n") > 0 and data.count(b"\r\n") == data.count(b"\n"),
              f"CRLF={data.count(b'\r\n')} LF={data.count(b'\n')}")
-    H.ok("启动工作台.bat 指向 workbench.py",
-         b"workbench.py" in (HERE / "启动工作台.bat").read_bytes())
+    H.ok("start_workbench.bat 指向 workbench.py",
+         b"workbench.py" in (HERE / "start_workbench.bat").read_bytes())
 
     # 启动器必须挑到"能 import tkinter"的那个 Python。
     # 机器上常有好几个 Python（venv / 便携版 / 嵌入式），其中一些不带
     # tkinter；pythonw 没有控制台，导入失败时窗口根本不出现、也不报错，
     # 用户双击后只会觉得"没反应"。所以启动器会逐个探测。
-    launcher = HERE / "启动工作台.bat"
+    launcher = HERE / "start_workbench.bat"
     if launcher.is_file() and os.name == "nt":
         probe_src = launcher.read_text(encoding="ascii").replace(
             'start "" "%PY%" "%~dp0workbench.py"', "echo CHOSEN=%PY%")
@@ -799,8 +799,8 @@ def section_e2e(tmp, wb):
         stale = []
         for name in ("workbench.py", "ileapp_zh.py", "dict_ileapp_zh.json",
                      "build_dict.py", "measure_coverage.py", "verify_localize.py",
-                     "selftest.py", "release_check.py", "使用说明.md",
-                     "启动工作台.bat", "extracted.json"):
+                     "selftest.py", "release_check.py", "USAGE.zh-CN.md",
+                     "start_workbench.bat", "extracted.json"):
             a = HERE / name
             b = deploy / name
             if not a.is_file():
