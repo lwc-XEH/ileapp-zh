@@ -579,12 +579,14 @@ def section_workbench(tmp):
             H.skip(name, "文件不存在")
             continue
         data = bat.read_bytes()
+        n_lf = data.count(b"\n")
+        n_crlf = data.count(b"\r\n")
         H.ok(f"{name} 是纯 ASCII（cmd.exe 按 GBK 读）",
              all(b < 128 for b in data),
              f"含非 ASCII 字节: {[b for b in data if b >= 128][:8]}")
         H.ok(f"{name} 是 CRLF 行尾",
-             data.count(b"\n") > 0 and data.count(b"\r\n") == data.count(b"\n"),
-             f"CRLF={data.count(b'\r\n')} LF={data.count(b'\n')}")
+             n_lf > 0 and n_crlf == n_lf,
+             f"CRLF={n_crlf} LF={n_lf}")
     H.ok("start_workbench.bat 指向 workbench.py",
          b"workbench.py" in (HERE / "start_workbench.bat").read_bytes())
 
@@ -841,6 +843,32 @@ def section_e2e(tmp, wb):
         H.skip("workbench.process 整链", "tkinter 不可用")
 
 
+# --------------------------------------------------- 0 Python 版本兼容底线
+def section_pyfloor(floor=(3, 10)):
+    """全部脚本必须能在最低支持版本（3.10）上解析。
+
+    每台开发机的 Python 版本都不一样，很容易写出"我这儿能跑"却只能在
+    3.12+ 解析的语法——f-string 表达式里用反斜杠或复用引号（PEP 701）就是
+    典型，3.10 直接 SyntaxError。CI 矩阵里跑 3.10，这种代码推上去必红，
+    所以在本地自测里先拦一道。
+    """
+    H.section("0 Python 版本兼容底线")
+    import ast
+    note = ".".join(str(n) for n in floor)
+    bad = []
+    files = sorted(HERE.glob("*.py"))
+    for p in files:
+        try:
+            ast.parse(p.read_text(encoding="utf-8"), filename=str(p),
+                      feature_version=floor)
+        except SyntaxError as exc:
+            bad.append(f"{p.name}:{exc.lineno} {exc.msg}")
+    H.ok(f"{len(files)} 个脚本都能在 Python {note} 上解析", not bad,
+         "；".join(bad[:5]))
+    if sys.version_info < floor:
+        H.skip("当前解释器版本", f"低于 {note}，上面的结论仅供参考")
+
+
 # --------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description="iLEAPP 中文工作台自动化测试")
@@ -852,6 +880,7 @@ def main():
     print(f"工作目录: {HERE}")
     print(f"解释器  : {sys.executable}")
 
+    section_pyfloor()
     raw = json.loads((HERE / "dict_ileapp_zh.json").read_text(encoding="utf-8"))
     dic = ileapp_zh.Dictionary(HERE / "dict_ileapp_zh.json")
 

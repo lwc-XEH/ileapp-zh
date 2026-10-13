@@ -181,10 +181,11 @@ python selftest.py           # unit + integration, seconds (does not start iLEAP
 python selftest.py --e2e     # also runs real iLEAPP end-to-end
 ```
 
-Eight sections:
+Nine sections:
 
 | # | What it checks |
 | --- | --- |
+| 0 | Python floor — every script must parse on Python 3.10 (the declared minimum) |
 | 1 | Dictionary integrity — structure, empty values, junk plurals, "keep as-is" protection |
 | 2 | Engine units — plural derivation, column detection, whitespace, identifier guard, chain precedence |
 | 3 | HTML safety invariants — tag sequence, `<script>`/`<style>`, byte-for-byte `<td>`, idempotence |
@@ -193,6 +194,11 @@ Eight sections:
 | 6 | Coverage thresholds — guards against dictionary regression (modules ≤5%, headers ≤10%, categories ≤50%) |
 | 7 | Golden set — human-verified terms, protected identifiers, historical regression cases |
 | 8 | End-to-end — real iLEAPP run → localize → re-verify invariants |
+
+Section 0 exists because a development machine may run a newer Python than the declared
+minimum. Syntax that parses on 3.12+ but not on 3.10 (backslashes or reused quotes inside
+f-string expressions, both unlocked by PEP 701) would otherwise pass locally and fail only
+in CI. `release_check.py` performs the same floor check during compilation.
 
 ### Release check
 

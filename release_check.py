@@ -28,6 +28,7 @@
     ILEAPP_ZH_PRIVACY_TERMS 额外的敏感词，分号分隔（如自己的工具目录名）
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -115,22 +116,52 @@ def tracked_files():
     return [HERE / n for n in FALLBACK_FILES if (HERE / n).is_file()]
 
 
-def check_compile():
-    """编译全部 .py。用 compile() 而不是 py_compile，避免落 __pycache__。"""
+def check_compile(floor=(3, 10)):
+    """编译全部 .py。用 compile() 而不是 py_compile，避免落 __pycache__。
+
+    除了当前解释器，还会按**最低支持版本**再解析一遍：语法在 3.12+ 上合法、
+    在 3.10 上报错的情况是真实存在的（f-string 表达式里用反斜杠、复用引号，
+    都是 PEP 701 才放开）。CI 的矩阵里就有 3.10，这种代码会直接红。
+    在本地先拦一道，省得推上去才发现。
+    """
     bad = []
     files = sorted(HERE.glob("*.py"))
+    floor_note = ".".join(str(n) for n in floor)
     for p in files:
+        text = p.read_text(encoding="utf-8")
         try:
-            compile(p.read_text(encoding="utf-8"), str(p), "exec")
+            compile(text, str(p), "exec")
         except (SyntaxError, UnicodeDecodeError) as exc:
             bad.append(f"{p.name}: {exc}")
+            continue
+        try:
+            ast.parse(text, filename=str(p), feature_version=floor)
+        except SyntaxError as exc:
+            bad.append(f"{p.name}: 不兼容 Python {floor_note}"
+                       f"（第 {exc.lineno} 行：{exc.msg}）")
     return len(files), bad
+
+
+def _personal_user():
+    """返回需要排查的本机用户名，CI / 通用账号名一律排除。
+
+    为什么要排除：CI 上 USER 就是 "runner"（GitHub Actions）或
+    "runneradmin"（Windows runner），而 workflow 里天然会写 runner.os
+    这类官方语法。若不排除，"本机用户名 runner" 会把每个 CI 跑成红色。
+    这个检查的目的是抓**个人**目录泄露，不是抓通用词。
+    """
+    user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    if user.lower() in {"runner", "runneradmin", "root", "user", "admin",
+                        "administrator", "github", "actions", "ci",
+                        "build", "jenkins", "docker", "vscode"}:
+        return ""
+    return user
 
 
 def check_privacy():
     """扫描会提交的文件里有没有个人信息。"""
     hits = []
-    user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    user = _personal_user()
     for p in tracked_files():
         if not p.is_file():
             continue
@@ -284,6 +315,7 @@ def main():
 
             n_files, bad = check_compile()
             print(f"  {'√' if not bad else '×'} 编译 {n_files} 个脚本"
+                  f"（兼容 Python 3.10+）"
                   + ("" if not bad else f"，{len(bad)} 个失败"))
             for b in bad:
                 print("      " + b)
