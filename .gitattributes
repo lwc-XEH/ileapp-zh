@@ -1,0 +1,22 @@
+# 默认按文本处理，仓库内统一 LF
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF：cmd.exe 解析 LF-only 的 .bat
+# 在多行括号块 / goto 标签上会出错，所以这里强制 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.exe binary
+*.db binary
+*.lava binary
+
+# 生成物：折叠 diff，也不计入语言统计
+extracted.json     linguist-generated=true
+dict_ileapp_zh.json linguist-generated=true

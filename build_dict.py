@@ -1,0 +1,860 @@
+"""Build the iLEAPP EN->ZH dictionary and dump it to JSON.
+
+Kept as a Python source file so syntax errors surface at build time instead of
+producing a broken hand-written JSON file.
+
+Structure of the output:
+  ui         - fixed labels baked into the report template (scripts/html_parts.py)
+  categories - report sidebar categories; only generic ones are listed, brand
+               and app names are deliberately left out so they stay as-is
+  headers    - exact translations for high-frequency, human-readable table columns
+  modules    - exact translations for module display names
+  glossary   - term level map used for compositional translation of long-tail
+               strings that are not in the exact maps
+"""
+
+import json
+import pathlib
+
+# ---------------------------------------------------------------- UI labels
+# Verbatim strings from scripts/html_parts.py and scripts/report.py
+UI = {
+    "Dark Switch": "深色模式",
+    "Loading...": "加载中…",
+    "All dates and times are in UTC unless stated otherwise.":
+        "除非另有说明，所有日期和时间均为 UTC。",
+    "All dates and times are in UTC unless noted otherwise!":
+        "除非另有说明，所有日期和时间均为 UTC！",
+    "Case": "案件",
+    "Extraction Location": "检材位置",
+    "Details": "案件详情",
+    "Device details": "设备详情",
+    "Script run log": "脚本运行日志",
+    "Processed files list": "已处理文件清单",
+    "LAVA only artifacts": "仅 LAVA 的取证项",
+    "Thank you for using iLEAPP": "感谢使用 iLEAPP",
+    "Support open source and report any bugs!": "请支持开源，发现问题请反馈！",
+    "Project Home": "项目主页",
+    "iLEAPP Team": "iLEAPP 团队",
+    "iLEAPP contributors": "iLEAPP 贡献者",
+    "Android Events": "Android 事件",
+    "Artifacts": "取证项",
+    "Timeline": "时间线",
+    "Saved Reports": "已保存报告",
+    "Report Home": "报告首页",
+    "Case Information": "案件信息",
+    "iLEAPP Report": "iLEAPP 报告",
+    "iOS Logs, Events, And Plists Parser": "iOS 日志、事件与属性列表解析器",
+    "iLEAPP is an open source project that aims to parse every known iOS artifact "
+    "for the purpose of forensic analysis.":
+        "iLEAPP 是一个开源项目，旨在解析所有已知的 iOS 取证痕迹，用于取证分析。",
+    "Static battery identity written once per battery pack from BDC_Once logs":
+        "每个电池组仅写入一次的电池静态身份信息，来自 BDC_Once 日志",
+}
+
+# ------------------------------------------------------- variable patterns
+# 带变量的固定句式。用正则，捕获组在译文里用 \1 \2 引用。
+# 顺序即优先级，先匹配先生效。
+PATTERNS = [
+    [r"^Total number of entries: (\d+)$", r"条目总数：\1"],
+    [r"^Total number of rows: (\d+)$", r"总行数：\1"],
+    [r"^Total number of items: (\d+)$", r"项目总数：\1"],
+    [r"^Total number of files: (\d+)$", r"文件总数：\1"],
+    [r"^Total number of records: (\d+)$", r"记录总数：\1"],
+]
+
+# ------------------------------------------------------------- categories
+# Only generic/descriptive categories. App and brand names (Uber, Netflix,
+# Telegram, TikTok, ...) are intentionally absent so they remain unchanged.
+CATEGORIES = {
+    "Battery": "电池",
+    "PowerLog": "电源日志",
+    "Unified Logs": "统一日志",
+    "Locations": "位置信息",
+    "Location": "位置信息",
+    "Health": "健康",
+    "Health & Fitness": "健康与健身",
+    "Identifiers": "标识符",
+    "Installed Apps": "已安装应用",
+    "User Activity": "用户活动",
+    "File System": "文件系统",
+    "Sysdiagnose": "系统诊断",
+    "Safari Browser": "Safari 浏览器",
+    "Mobile Installation Logs": "移动端安装日志",
+    "Apple Watch": "Apple Watch",
+    "Chromium": "Chromium",
+    "Photos.sqlite": "Photos.sqlite",
+    "Biome": "Biome",
+    "Data Usage": "数据用量",
+    "Device Info": "设备信息",
+    "Notifications": "通知",
+    "Network": "网络",
+    "Wi-Fi": "Wi-Fi",
+    "Bluetooth": "蓝牙",
+    "Call History": "通话记录",
+    "Messages": "短信与消息",
+    "Contacts": "通讯录",
+    "Calendar": "日历",
+    "Camera": "相机",
+    "Screen Time": "屏幕使用时间",
+    "Keyboard": "键盘",
+    "System": "系统",
+    "Accounts": "账号",
+    "AirDrop": "隔空投送",
+    "Maps": "地图",
+    "Weather": "天气",
+    "App Store": "App Store",
+    "Lockdown Mode": "锁定模式",
+    "Privacy": "隐私",
+    "Passwords": "密码",
+    "Backup": "备份",
+    "Analytics": "分析数据",
+    "Crash Logs": "崩溃日志",
+    "Diagnostic Logs": "诊断日志",
+    "Bluetooth Devices": "蓝牙设备",
+    "WiFi Networks": "Wi-Fi 网络",
+    "Cell Towers": "基站",
+    "TCC": "TCC 权限",
+    "Shutdown Log": "关机日志",
+    "Power Management": "电源管理",
+    "User Notifications": "用户通知",
+    "Safari": "Safari",
+    "Search": "搜索",
+    "Web": "网页",
+    "Media": "媒体",
+    "Photos": "照片",
+    "Videos": "视频",
+    "Audio": "音频",
+    "Documents": "文档",
+    "Downloads": "下载",
+    "Home Screen": "主屏幕",
+    "Widgets": "小组件",
+    "Shortcuts": "快捷指令",
+    "Siri": "Siri",
+    "Focus": "专注模式",
+    "Wallet": "钱包",
+    "CarPlay": "CarPlay",
+    "FaceTime": "FaceTime",
+    "iMessage": "iMessage",
+    "Mail": "邮件",
+    "Notes": "备忘录",
+    "Reminders": "提醒事项",
+    "Stocks": "股市",
+    "Podcasts": "播客",
+    "Books": "图书",
+    "Music": "音乐",
+    "Files": "文件",
+    "Cloud": "云",
+    "iCloud": "iCloud",
+    "Backups": "备份",
+}
+
+# ----------------------------------------------------------------- headers
+# Exact matches for the most frequent, human-readable columns. Everything else
+# falls through to the glossary.
+HEADERS = {
+    # --- highest frequency
+    "Source File": "来源文件",
+    "Source Path": "来源路径",
+    "Source file name": "来源文件名",
+    "Source Table": "来源表",
+    "Source App": "来源应用",
+    "Source Type": "来源类型",
+    "Timestamp": "时间戳",
+    "datetime": "日期时间",
+    "media": "媒体",
+    "Latitude": "纬度",
+    "Longitude": "经度",
+    "Altitude": "海拔",
+    "Horizontal Accuracy": "水平精度",
+    "Vertical Accuracy": "垂直精度",
+
+    # --- identity / account
+    "Account ID": "账号 ID",
+    "User ID": "用户 ID",
+    "User Name": "用户名",
+    "Display Name": "显示名称",
+    "First Name": "名",
+    "Last Name": "姓",
+    "Full Name": "姓名",
+    "Full name": "姓名",
+    "Bundle ID": "应用包名",
+    "Application Bundle ID": "应用包名",
+    "Container App": "所属应用",
+    "Device ID": "设备 ID",
+    "Device Name": "设备名称",
+    "Device Model": "设备型号",
+    "Serial Number": "序列号",
+    "Unique ID": "唯一标识",
+    "Item ID": "项目 ID",
+    "Record ID": "记录 ID",
+    "Row ID": "行 ID",
+    "Row Number": "行号",
+    "Trace ID": "追踪 ID",
+    "Event ID": "事件 ID",
+    "Product ID": "产品 ID",
+    "Document ID": "文档 ID",
+    "Session ID": "会话 ID",
+    "Channel ID": "频道 ID",
+    "Group ID": "群组 ID",
+    "Group Name": "群组名称",
+    "Contact ID": "联系人 ID",
+    "Property Value": "属性值",
+
+    # --- messaging
+    "Message ID": "消息 ID",
+    "Message Type": "消息类型",
+    "Message Timestamp": "消息时间戳",
+    "Conversation ID": "会话 ID",
+    "Chat ID": "聊天 ID",
+    "Chat Name": "聊天名称",
+    "Thread ID": "线程 ID",
+    "Sender ID": "发送者 ID",
+    "Sender Name": "发送者名称",
+    "Phone Number": "电话号码",
+    "Phone number": "电话号码",
+    "From Me": "是否本人发送",
+    "Unread Count": "未读数",
+    "Avatar URL": "头像 URL",
+    "Event Message": "事件消息",
+
+    # --- time
+    "Start Time": "开始时间",
+    "End Time": "结束时间",
+    "Start Date": "开始日期",
+    "End Date": "结束日期",
+    "Creation Date": "创建日期",
+    "Creation Time": "创建时间",
+    "Created At": "创建于",
+    "Created Timestamp": "创建时间戳",
+    "Updated Timestamp": "更新时间戳",
+    "Event Timestamp": "事件时间戳",
+    "Last Updated": "最后更新",
+    "Last Modified": "最后修改",
+    "Last Seen": "最后出现",
+    "Cache Time": "缓存时间",
+    "Time Added": "添加时间",
+    "Birth Date": "出生日期",
+    "Time Zone": "时区",
+    "Time Offset (seconds)": "时间偏移（秒）",
+    "Timestamp (as stored, no zone recorded)": "时间戳（按存储原样，未记录时区）",
+    "Type (as stored)": "类型（按存储原样）",
+    "State (as stored)": "状态（按存储原样）",
+    "SEGB State": "SEGB 状态",
+    "SEGB Timestamp": "SEGB 时间戳",
+
+    # --- web / network
+    "Request URL": "请求 URL",
+    "Image URL": "图片 URL",
+    "Search Term": "搜索词",
+    "Country Code": "国家代码",
+    "Zip Code": "邮政编码",
+    "Postal Code": "邮政编码",
+    "Venue Name": "地点名称",
+
+    # --- files / misc
+    "File Name": "文件名",
+    "File Path": "文件路径",
+    "File Size": "文件大小",
+    "Process ID": "进程 ID",
+    "Process Image Path": "进程映像路径",
+    "Product Name": "产品名称",
+    "App Name": "应用名称",
+    "App Version": "应用版本",
+    "OS Version": "系统版本",
+    "OS Build": "系统构建版本",
+    "Sync Origin": "同步来源",
+    "Order ID": "订单 ID",
+    "Order Number": "订单编号",
+    "Order Date": "订单日期",
+    "Sort Order": "排序顺序",
+    "Field 2 (raw)": "字段 2（原始值）",
+    "Field 5 (raw)": "字段 5（原始值）",
+
+    # --- 电池 / BDC（对应截图里那批列）
+    "Chem ID": "化学 ID",
+    "Algo Chem ID": "算法化学 ID",
+    "EEEE (Factory Code)": "EEEE（工厂代码）",
+    "YWW (Mfr Date Code)": "YWW（生产日期代码）",
+    "Design Capacity (mAh)": "设计容量（mAh）",
+    "Gas Gauge Firmware Version": "电量计固件版本",
+    "Factory Code": "工厂代码",
+    "Mfr Date Code": "生产日期代码",
+    "Battery Serial Number": "电池序列号",
+    "Nominal Charge Capacity (mAh)": "标称容量（mAh）",
+    "Cycle Count": "循环次数",
+    "Ra Table Raw0": "内阻表原始值0",
+    "Total Operating Time": "累计工作时长",
+    "Weighted Ra": "加权内阻",
+    "Time At High SoC": "高荷电状态时长",
+    "Charging Voltage (mV)": "充电电压（mV）",
+    "BH Service Flags": "BH 服务标志",
+    "BH Calibration Flags": "BH 校准标志",
+
+    # --- 布尔语义列（Is X / X Enabled）
+    "On Charger": "接通电源",
+    "Is Active": "是否活动",
+    "Is Blocked": "是否已阻止",
+    "Is Group": "是否群组",
+    "Is Inaccurate": "是否不准确",
+    "Is Old": "是否过期",
+    "Is Favorite": "是否收藏",
+    "Is Deleted": "是否已删除",
+    "Is Hidden": "是否隐藏",
+    "Is Shared": "是否已共享",
+    "Is Prototype": "是否原型",
+    "Is Charging": "是否充电中",
+    "Notifications Enabled": "通知已启用",
+    "Enabled": "已启用",
+    "Disabled": "已禁用",
+}
+
+# ----------------------------------------------------------------- modules
+# Exact matches for generic / structural module names. App-specific module
+# names are handled by the glossary, which preserves the app name.
+MODULES = {
+    "Battery Data Collection (BDC)": "电池数据采集（BDC）",
+    "Battery Data Collection (BDC) - Once": "电池数据采集（BDC）- 一次性记录",
+    "Battery Data Collection (BDC) - Weekly": "电池数据采集（BDC）- 每周记录",
+    "Battery Data Collection (BDC) - On Charger": "电池数据采集（BDC）- 接通电源",
+    "App Permissions": "应用权限",
+    "iOS Builds": "iOS 系统版本",
+    "Mobile Activation Logs": "移动端激活日志",
+    "Mobile Installation Logs": "移动端安装日志",
+    "Installed Applications": "已安装应用",
+    "Installed Apps": "已安装应用",
+    "Device Information": "设备信息",
+    "Device Info": "设备信息",
+    "File System": "文件系统",
+    "Timeline": "时间线",
+    "Unified Logs": "统一日志",
+    "Call History": "通话记录",
+    "Safari History": "Safari 浏览历史",
+    "Safari Bookmarks": "Safari 书签",
+    "Safari Downloads": "Safari 下载记录",
+    "Screen Time": "屏幕使用时间",
+    "Bluetooth Devices": "蓝牙设备",
+    "Wi-Fi Networks": "Wi-Fi 网络",
+    "Known Networks": "已知网络",
+    "Power Log": "电源日志",
+    "Powerlog": "电源日志",
+}
+
+# ---------------------------------------------------------------- glossary
+# Term level map. The translator sorts these longest-first and applies them with
+# word boundaries, so multi-word phrases always win over single words.
+# Used only for short strings (module names, column headers) - never for long
+# prose, which would come out mangled.
+GLOSSARY = {
+    # identity
+    "Account": "账号", "User": "用户", "Owner": "所有者", "Member": "成员",
+    "Contact": "联系人", "Participant": "参与者", "Sender": "发送者",
+    "Receiver": "接收者", "Recipient": "收件人", "Creator": "创建者",
+    "Author": "作者", "Contributor": "贡献者", "Person": "人物",
+    "Identifier": "标识符", "ID": "ID", "Name": "名称", "Nickname": "昵称",
+    "Username": "用户名", "Password": "密码", "Passcode": "锁屏密码",
+
+    # time
+    "Timestamp": "时间戳", "Datetime": "日期时间", "Date": "日期",
+    "Time": "时间", "Created": "创建", "Creation": "创建", "Modified": "修改",
+    "Updated": "更新", "Last": "最后", "First": "首次", "Start": "开始",
+    "End": "结束", "Added": "添加", "Deleted": "删除", "Trashed": "已删除",
+    "Expiry": "过期", "Expiration": "过期", "Duration": "时长",
+    "Offset": "偏移", "Seconds": "秒", "Milliseconds": "毫秒",
+    "Microseconds": "微秒", "Minutes": "分钟", "Hours": "小时",
+    "Day": "日", "Week": "周", "Month": "月", "Year": "年",
+    "Timezone": "时区", "Time Zone": "时区", "UTC": "UTC",
+    "Local": "本地", "Before": "之前", "After": "之后",
+
+    # device / system
+    "Device": "设备", "Model": "型号", "Manufacturer": "制造商",
+    "Hardware": "硬件", "Firmware": "固件", "Serial": "序列号",
+    "Version": "版本", "Build": "构建", "OS": "系统", "System": "系统",
+    "Platform": "平台", "Architecture": "架构", "Memory": "内存",
+    "Storage": "存储", "Disk": "磁盘", "Volume": "卷", "Partition": "分区",
+    "Filesystem": "文件系统", "File System": "文件系统",
+    "Process": "进程", "Thread": "线程", "CPU": "CPU", "GPU": "GPU",
+    "Boot": "启动", "Restart": "重启", "Shutdown": "关机", "Crash": "崩溃",
+    "Error": "错误", "Warning": "警告", "Debug": "调试", "Info": "信息",
+    "Log": "日志", "Event": "事件", "Alert": "提醒",
+
+    # network
+    "Network": "网络", "Wi-Fi": "Wi-Fi", "WiFi": "Wi-Fi", "Bluetooth": "蓝牙",
+    "Cellular": "蜂窝", "Carrier": "运营商", "SIM": "SIM", "IMEI": "IMEI",
+    "IMSI": "IMSI", "ICCID": "ICCID", "MAC": "MAC", "IP": "IP",
+    "Address": "地址", "Host": "主机", "Port": "端口",
+    "SSID": "SSID", "BSSID": "BSSID", "Signal": "信号", "Strength": "强度",
+    "Band": "频段", "Channel": "频道", "Frequency": "频率",
+    "Bytes": "字节",
+    "Sent": "已发送", "Received": "已接收",
+
+    # location
+    "Location": "位置", "Latitude": "纬度", "Longitude": "经度",
+    "Altitude": "海拔", "Accuracy": "精度", "Speed": "速度",
+    "Heading": "航向", "Course": "航向", "Distance": "距离",
+    "City": "城市", "Province": "省", "Country": "国家",
+    "Region": "地区", "Place": "地点", "Venue": "地点", "Route": "路线",
+    "Map": "地图", "Maps": "地图", "Geofence": "地理围栏",
+    "Geolocation": "地理位置", "Coordinate": "坐标", "Coordinates": "坐标",
+
+    # messaging
+    "Message": "消息", "Chat": "聊天", "Conversation": "会话",
+    "Group": "群组", "Subject": "主题",
+    "Body": "正文", "Content": "内容", "Text": "文本", "Attachment": "附件",
+    "Attachment Name": "附件名称", "Read": "已读", "Unread": "未读",
+    "Draft": "草稿", "Inbox": "收件箱", "Outbox": "发件箱",
+    "Reply": "回复", "Forward": "转发", "Call": "通话",
+    "Incoming": "呼入", "Outgoing": "呼出", "Missed": "未接",
+    "Voicemail": "语音留言", "Email": "邮箱",
+
+    # media
+    "Media": "媒体", "Photo": "照片", "Photos": "照片", "Video": "视频",
+    "Videos": "视频", "Audio": "音频", "Image": "图片", "Images": "图片",
+    "Album": "相册", "Camera": "相机", "Thumbnail": "缩略图",
+    "Resolution": "分辨率", "Width": "宽度", "Height": "高度",
+    "Orientation": "方向", "Frame Rate": "帧率", "Codec": "编码格式",
+    "Artist": "艺术家", "Title": "标题", "Track": "曲目", "Playlist": "播放列表",
+    "Playback": "播放", "Favorite": "收藏", "Shared": "已共享",
+    "Hidden": "隐藏", "Screenshot": "截图", "Live Photo": "实况照片",
+    "Burst": "连拍", "Panorama": "全景", "Portrait": "人像",
+    "Front": "前置", "Back": "后置", "Lens": "镜头", "Flash": "闪光灯",
+    "Focal": "焦距", "Zoom": "变焦", "Exposure": "曝光", "ISO": "ISO",
+    "Aperture": "光圈", "Metadata": "元数据", "Mime Type": "MIME 类型",
+    "Format": "格式",
+
+    # battery / power
+    "Battery": "电池", "Charging": "充电", "Charge": "电量",
+    "Capacity": "容量", "Design Capacity": "设计容量",
+    "Voltage": "电压", "Amperage": "电流",
+    # Current 在 iLEAPP 语料里 24/25 次都是时间义（Current Location / Current Phone /
+    # Is Current User），唯一的裸 "Current" 来自 pinterest.py 的 pin 状态。
+    # 早期误作"电流"，会把 Current Phone 译成"电流电话"。
+    "Current": "当前",
+    "Wattage": "功率", "Watts": "瓦特", "Temperature": "温度",
+    "Cycle Count": "循环次数", "Cycle": "循环", "Health": "健康",
+    "Power": "电源", "Adapter": "适配器", "Charger": "充电器",
+    "Gas Gauge": "电量计", "State of Charge": "荷电状态",
+    # Level 单用时译"水平"更通用；电池语义由 Battery Level 精确兜住，
+    # 否则 Backlight Level 会变成"背光电量水平"。
+    "Level": "水平", "Percent": "百分比", "Percentage": "百分比",
+
+    # files
+    "File": "文件", "Files": "文件", "Folder": "文件夹", "Directory": "目录",
+    "Path": "路径", "Filename": "文件名", "File Name": "文件名",
+    "Extension": "扩展名", "Container": "容器", "Bundle": "应用包",
+    "Package": "包", "Archive": "归档", "Compressed": "已压缩",
+    "Encrypted": "已加密", "Encryption": "加密", "Decryption": "解密",
+    "Signature": "签名", "Certificate": "证书", "Hash": "哈希",
+    "Checksum": "校验和", "Fingerprint": "指纹", "Integrity": "完整性",
+
+    # web
+    "Browser": "浏览器", "History": "历史记录", "Visit": "访问",
+    "Visited": "已访问", "Bookmark": "书签", "Bookmarks": "书签",
+    "Tab": "标签页", "Tabs": "标签页", "Window": "窗口", "Page": "页面",
+    "URL": "URL", "Link": "链接", "Domain": "域名", "Redirect": "重定向",
+    "Query": "查询", "Search": "搜索", "Search Term": "搜索词",
+    "Cookie": "Cookie", "Cookies": "Cookie", "Cache": "缓存",
+    "Session": "会话", "Token": "令牌", "Credential": "凭据",
+
+    # permissions / state
+    "Permission": "权限", "Permissions": "权限", "Access": "访问",
+    "Granted": "已授权", "Denied": "已拒绝", "Restricted": "受限",
+    "Allowed": "允许", "Blocked": "已阻止", "Enabled": "已启用",
+    "Disabled": "已禁用", "Active": "活动", "Inactive": "非活动",
+    "Status": "状态", "State": "状态", "Flag": "标志", "Flags": "标志",
+    "Type": "类型", "Category": "类别", "Kind": "种类", "Class": "类别",
+    "Mode": "模式", "Setting": "设置", "Settings": "设置",
+    "Option": "选项", "Value": "值", "Key": "键", "Property": "属性",
+    "Attribute": "属性", "Field": "字段", "Column": "列", "Row": "行",
+    "Table": "表", "Record": "记录", "Entry": "条目", "Item": "项目",
+    "Index": "索引", "Order": "顺序", "Sequence": "序列", "Sort": "排序",
+    "Ascending": "升序", "Descending": "降序", "Priority": "优先级",
+    "Scope": "作用域", "Visibility": "可见性", "Privacy": "隐私",
+    "Public": "公开", "Private": "私有", "Protected": "受保护",
+    "Valid": "有效", "Invalid": "无效", "Unknown": "未知",
+    "Available": "可用", "Unavailable": "不可用", "Missing": "缺失",
+    "Total": "总计", "Count": "数量", "Number": "编号", "Amount": "数量",
+    "Size": "大小", "Length": "长度", "Rate": "速率", "Ratio": "比率",
+    "Average": "平均", "Maximum": "最大", "Minimum": "最小",
+    "Min": "最小", "Max": "最大", "Sum": "合计",
+    # 注意：Yes/No/On/Off/True/False/None 这类"值类词"刻意不入词表。
+    # 它们参与组合翻译会把短语改坏，例如 Notification Off -> "通知关"。
+
+    # finance / commerce
+    "Price": "价格", "Currency": "货币", "Cost": "费用", "Fee": "手续费",
+    "Payment": "支付", "Transaction": "交易", "Balance": "余额",
+    "Booking": "预订", "Reservation": "预订",
+    "Trip": "行程", "Ride": "行程", "Fare": "车费", "Discount": "折扣",
+    "Product": "产品", "Merchant": "商户", "Store": "商店",
+    "Customer": "客户", "Review": "评价", "Rating": "评分",
+
+    # health / activity
+    "Workout": "锻炼", "Exercise": "运动", "Heart Rate": "心率",
+    "Steps": "步数", "Sleep": "睡眠", "Calorie": "卡路里",
+    "Calories": "卡路里", "Activity": "活动", "Workout Type": "锻炼类型",
+    "Screen Time": "屏幕使用时间", "Unlock": "解锁", "Lock": "锁定",
+    "Usage": "使用情况", "App Usage": "应用使用情况",
+    "Notification": "通知", "Pickup": "拿起次数",
+
+    # misc
+    "App": "应用", "Application": "应用", "Apps": "应用",
+    "Installed": "已安装", "Uninstalled": "已卸载", "Update": "更新",
+    "Upgrade": "升级", "Install": "安装", "Uninstall": "卸载",
+    "Download": "下载", "Upload": "上传", "Sync": "同步",
+    "Synchronization": "同步", "Backup": "备份", "Restore": "恢复",
+    "Import": "导入", "Export": "导出", "Origin": "来源",
+    "Source": "来源", "Destination": "目标", "Target": "目标",
+    "Parent": "父级", "Child": "子级", "Children": "子级",
+    "Related": "相关", "Reference": "引用", "Note": "备注",
+    "Notes": "备注", "Comment": "评论", "Description": "描述",
+    "Summary": "摘要", "Detail": "详情", "Details": "详情",
+    "Language": "语言", "Locale": "区域", "Encoding": "编码",
+    "Raw": "原始值", "as stored": "按存储原样", "Original": "原始",
+    "Recovered": "已恢复", "Carved": "已雕刻恢复",
+}
+
+# ------------------------------------------------- 补充术语（第二批）
+# 来源：用第一版词典跑 1247 个模块名，对 516 个未译项做词频统计，
+# 挑出高频且该翻的词。构建时与 GLOSSARY 合并，重复的自动跳过。
+# 品牌名（Google / Apple / Coinbase / Foursquare ...）刻意不收录，保持原样。
+GLOSSARY_EXTRA = {
+    # 数据与资源
+    "Asset": "资源", "Assets": "资源", "Data": "数据", "Database": "数据库",
+    "Dataset": "数据集", "Analysis": "分析", "Analyze": "分析",
+    "Analytics": "分析数据", "Statistics": "统计", "Summary": "摘要",
+    "Timeline": "时间线", "Interval": "间隔", "Duration": "时长",
+    "Trigger": "触发", "Condition": "条件", "Action": "动作",
+    "Result": "结果", "Input": "输入", "Output": "输出",
+    "Default": "默认", "Custom": "自定义", "Manual": "手动",
+    "Automatic": "自动", "Temporary": "临时", "Permanent": "永久",
+    "Cached": "已缓存", "Saved": "已保存", "Basic": "基础",
+    "Connected": "已连接", "Connection": "连接", "Preferences": "偏好设置",
+    "Preference": "偏好设置", "Plist": "Plist", "Messenger": "通讯软件",
+
+    # 通讯 / 社交
+    "Mail": "邮件", "Calendar": "日历", "Alarm": "闹钟", "Clock": "时钟",
+    "Timer": "计时器", "Voice": "语音", "Voice Memo": "语音备忘录",
+    "Voice Call": "语音通话", "Video Call": "视频通话",
+    "Group Chat": "群聊", "Direct Message": "私信",
+    "Read Receipt": "已读回执", "Attachments": "附件",
+    "Saved Message": "已保存消息", "Draft Message": "草稿消息",
+    "Post": "帖子", "Feed": "动态", "Story": "故事", "Bio": "简介",
+    "Follower": "粉丝", "Following": "关注", "Like": "点赞",
+    "Profile": "资料", "Avatar": "头像", "Nickname": "昵称",
+    "Face": "人脸", "Facial": "人脸", "Recognition": "识别",
+
+    # 媒体
+    "Music": "音乐", "Song": "歌曲", "Podcast": "播客", "Show": "节目",
+    "Playlist": "播放列表", "Live Photo": "实况照片", "Portrait": "人像",
+    "Screenshot": "截图", "Screen Recording": "屏幕录制",
+
+    # 时间
+    "Recent": "最近", "Recents": "最近", "Recently": "最近",
+    "Recently Deleted": "最近删除", "Saved Search": "已保存搜索",
+    "Search History": "搜索历史", "Frequency": "频率",
+
+    # 设备 / 系统
+    "Home": "主页", "Lock Screen": "锁屏", "Wallpaper": "壁纸",
+    "Screen": "屏幕", "Display": "显示", "Brightness": "亮度",
+    "Volume": "音量", "Ringtone": "铃声", "Vibration": "振动",
+    "Keyboard": "键盘", "Watch": "手表", "Intelligence": "智能",
+    "Technology": "技术", "Diagnostic": "诊断", "Report": "报告",
+    "Panic": "内核崩溃", "Usage": "使用情况", "Wallet": "钱包",
+    "Pass": "凭证", "Card": "卡片", "Group Chat List": "群聊列表",
+
+    # 行程 / 商务
+    "Trip": "行程", "Navigation": "导航", "Direction": "方向",
+    "Place": "地点", "Address Book": "通讯录", "Reservation": "预订",
+    "Itinerary": "行程单", "Checkin": "签到",
+}
+
+
+# ------------------------------------------------- 补充术语（第三批）
+# 针对剩余未翻译模块名里成批出现的**通用名词**。品牌名一律不收：
+# "Netflix - Continue Watching" 该译的是 Continue Watching，不是 Netflix。
+GLOSSARY_EXTRA_2 = {
+    # Biome（Apple 行为推断库）
+    "Backlight": "背光",
+    "Keybag": "密钥包",
+    "Locked": "已锁定",
+    "Now Playing": "正在播放",
+    "Intent": "意图",
+    "Emoji": "表情",
+    "Engagement": "互动",
+    "Share Sheet": "分享面板",
+    "Feedback": "反馈",
+    "Edge Selection": "边缘选择",
+    "Do Not Disturb": "勿扰模式",
+    "Button Click": "按钮点击",
+
+    # 系统 / 日志
+    "Emergency SOS": "紧急 SOS",
+    "Flashlight": "手电筒",
+    "Dictation": "听写",
+    "Hotspot": "热点",
+    "Personal Hotspot": "个人热点",
+    "Lease": "租约",
+    "Wipe": "擦除",
+    "Indicator": "指示",
+    "Migration": "迁移",
+    "Waypoint": "航点",
+    "Maptile": "地图瓦片",
+    "Speedtest": "测速",
+    "Security": "安全",
+    "Artifact": "取证项",
+    "Daily": "每日",
+    "Metric": "指标",
+    "Web Page": "网页",
+
+    # 应用功能
+    "Template": "模板",
+    "Gallery": "图库",
+    "Applet": "小程序",
+    "Room": "房间",
+    "Service": "服务",
+    "Loyalty Points": "积分",
+    "Marketplace": "商城",
+    "Offer": "优惠",
+    "Searched Terms": "搜索词",
+    "Self Scanning Basket": "自助扫描购物篮",
+    "Shopping List": "购物清单",
+    "Ticket List": "票券列表",
+    "Purchased Ticket": "已购票券",
+    "Boarding Pass": "登机牌",
+    "Downloaded Tile": "已下载瓦片",
+    "Continue Watching": "继续观看",
+    "Offline Selection": "离线选择",
+    "Push Registration": "推送注册",
+    "Nearby Vehicle": "附近车辆",
+    "Peer Presence": "对端在线状态",
+    "Subreddit": "子版块",
+    "Subscription": "订阅",
+    "Expense": "支出",
+    "Match": "匹配",
+    "Recommendation": "推荐",
+    "Status": "状态",
+    "Poll": "投票",
+    "Motion": "运动",
+    "Structure": "结构",
+    "Block": "区块",
+    "Collection": "合集",
+    "Project": "项目",
+    "Preview": "预览",
+    "Clip": "片段",
+    "Friend Request": "好友请求",
+    "Friend": "好友",
+    "Plan": "计划",
+    "Sticker": "贴纸",
+    "Tip": "提示",
+    "Check-in": "签到",
+    "House": "房屋",
+    "Article Request": "文章请求",
+    "Suggested Invites": "推荐邀请",
+    "Metric Batch Context": "指标批次上下文",
+    "Make New Friends": "结交新朋友",
+    "Files App": "文件应用",
+
+    # 设备信息
+    "Medical ID": "医疗急救卡",
+    "Top Sites": "常访问网站",
+    "WorldClock": "世界时钟",
+    "Stopwatch": "秒表",
+    "Share": "共享",
+    "Shared": "共享",
+    "SMS": "短信",
+
+    # 补充：之前只有 "Device Information" 整串，裸 Information 缺失
+    "Information": "信息",
+    "Sample": "采样",
+    "Movement": "移动",
+    "Consolidated": "合并",
+    "Client": "客户端",
+    "Journey": "行程",
+    "Consolidate": "合并",
+}
+
+# ------------------------------------------------- 补充分类（第二批）
+CATEGORIES_EXTRA = {
+    "Applications": "应用",
+    # Apple 自家应用名：保留 Apple 前缀，否则 "Apple Podcasts Episodes"
+    # 会被组合成 "播客 Episodes"，品牌信息丢了。
+    "Apple Mail": "Apple 邮件",
+    "Apple Music": "Apple 音乐",
+    "Apple Podcasts": "Apple 播客",
+    "Apple Wallet": "Apple 钱包",
+    "Apple Intelligence": "Apple 智能",
+    "AI Provenance": "AI 溯源",
+    "App Permissions": "应用权限",
+    "Safari History": "Safari 历史",
+    "Safari Bookmarks": "Safari 书签",
+    "Safari Downloads": "Safari 下载",
+    "Screen Time": "屏幕使用时间",
+    "Device Information": "设备信息",
+    "Mobile Installation Logs": "移动端安装日志",
+    "Mobile Activation Logs": "移动端激活日志",
+    "Powerlog": "电源日志",
+    "Bluetooth": "蓝牙",
+    "Wi-Fi": "Wi-Fi",
+    "Cellular": "蜂窝网络",
+    "Location Services": "定位服务",
+    "Photos.sqlite": "Photos.sqlite",
+    "App Store": "App Store",
+    "Messages": "短信与消息",
+    "Phone": "电话",
+    "FaceTime": "FaceTime",
+    "Siri & Search": "Siri 与搜索",
+    "Focus": "专注模式",
+    "Shortcuts": "快捷指令",
+    "Home Screen": "主屏幕",
+    "Lock Screen": "锁屏",
+    "System Services": "系统服务",
+    "Keyboard": "键盘",
+    "Contacts": "通讯录",
+    "Calendar": "日历",
+    "Reminders": "提醒事项",
+    "Notes": "备忘录",
+    "Health & Fitness": "健康与健身",
+    "App Usage": "应用使用情况",
+    "User Activity": "用户活动",
+    "File System": "文件系统",
+    "Sysdiagnose": "系统诊断",
+    "Unified Logs": "统一日志",
+    "Locations": "位置信息",
+    "Battery": "电池",
+}
+
+
+# ------------------------------------------------- 补充分类（第三批）
+# 只收"确实该译"的通用词。品牌/产品名（Airbnb、TikTok、Spotify、Reddit、WhatsApp、
+# Google Drive、Netflix、Snapchat…）一律留原文——这是**有意为之**，不是漏译。
+CATEGORIES_EXTRA_2 = {
+    "Banking": "银行",
+    "Business": "商务",
+    "Finance": "财务",
+    "Calculator#": "计算器#",
+    "Control Center": "控制中心",
+    "Core Accessories": "核心配件",
+    "Find My": "查找",
+    "Fitness": "健身",
+    "Identity Lookup Service": "身份查询服务",
+    "Keychain": "钥匙串",
+    "Knowledge Graph": "知识图谱",
+    "Parking": "停车",
+    "Siri Remembers": "Siri 记忆",
+    "SMS & iMessage": "短信与 iMessage",
+    "Spotlight": "聚焦搜索",
+    # Spotlight + Searches 会组合成"聚焦搜索搜索"，点名兜住
+    "Spotlight Searches": "聚焦搜索记录",
+    "Translator": "翻译",
+    "Travel": "出行",
+    "Trusted Peers": "受信任设备",
+    "iCloud Quick Look": "iCloud 快速查看",
+    "iCloud Returns": "iCloud 退货记录",
+}
+
+
+# ------------------------------------------------- 补充模块名（精确）
+# 这几个模块名里的 Focus 是"对焦 / 前台"，不是 iOS 的专注模式，必须点名修正。
+MODULES_EXTRA = {
+    "Biome - Camera Auto Focus ROI": "Biome - 相机自动对焦 ROI",
+    "Biome - In Focus": "Biome - 专注模式",
+    "Biome - In Focus DKEvent": "Biome - 专注模式 DKEvent",
+    "logarchive app focus and lifecycle": "logarchive 应用前台与生命周期",
+}
+
+
+# ------------------------------------------------- 补充表头（第三批）
+# 全是"组合翻译会译坏"的短语，逐个点名兜住。
+# 注意 Case：在 iLEAPP 语料里是"场景 / 条目"，不是"案件"（Use Case = 使用场景）。
+HEADERS_EXTRA_2 = {
+    "Use Case": "使用场景",
+    "Auto Focus": "自动对焦",
+    "Primary Phone": "主号码",
+    "Mobile phone": "手机号",
+    "Mobile Phone Number": "手机号",
+    "On Phone": "是否本机",
+    "Cloud Paired": "云端配对",
+    "Phone (as formatted)": "电话号码（格式化）",
+    "Phone (as stored)": "电话号码（按存储原样）",
+    "Phone Number (as stored)": "电话号码（按存储原样）",
+    "Postal Code (plz)": "邮政编码（plz）",
+    "Current Phone": "当前号码",
+    "Current Location": "当前位置",
+    "Current Profile": "当前配置",
+    "Current RTC Ticks": "当前 RTC 计数",
+    "Current Speed (as stored)": "当前速度（按存储原样）",
+    "Is Current User": "是否为当前用户",
+    "Is Current App User": "是否为当前应用用户",
+    "Web Page URL": "网页 URL",
+    "Web App URL": "Web 应用 URL",
+    "Number of Documents": "文档数量",
+    "Contact Phone": "联系人电话",
+    "Store Phone": "商店电话",
+    "Sender Phone": "发送者电话",
+    "Chat Phone(s)": "聊天电话号码",
+    "Name In Phone (as stored)": "电话中的名称（按存储原样）",
+    "Canonized Phone Number": "规范化电话号码",
+    "Backlight Level": "背光亮度",
+    "Battery Level": "电池电量",
+    "Signal Level": "信号强度",
+    "Volume Level": "音量",
+}
+
+
+def merge(base, extra, name):
+    """合并两批词条：已存在的键保留原值并提示，避免悄悄覆盖。"""
+    dup = sorted(set(base) & set(extra))
+    if dup:
+        print(f"[提示] {name} 中已有这些键，已跳过补充值: {dup}")
+    merged = dict(base)
+    for k, v in extra.items():
+        merged.setdefault(k, v)
+    return merged
+
+
+def main():
+    glossary = merge(merge(GLOSSARY, GLOSSARY_EXTRA, "GLOSSARY"),
+                    GLOSSARY_EXTRA_2, "GLOSSARY")
+    categories = merge(merge(CATEGORIES, CATEGORIES_EXTRA, "CATEGORIES"),
+                       CATEGORIES_EXTRA_2, "CATEGORIES")
+    headers = merge(HEADERS, HEADERS_EXTRA_2, "HEADERS")
+    modules = merge(MODULES, MODULES_EXTRA, "MODULES")
+
+    out = {
+        "_meta": {
+            "name": "iLEAPP 报告中文词典",
+            "for": "iLEAPP report HTML translation",
+            "source": "abrignoni/iLEAPP scripts/artifacts/*.py + scripts/html_parts.py",
+            "ui": len(UI),
+            "categories": len(categories),
+            "headers": len(headers),
+            "modules": len(modules),
+            "glossary": len(glossary),
+            "patterns": len(PATTERNS),
+            # 组合词表额外叠加哪些表。exact 只在**整串**命中时生效，所以
+            # categories / modules 这类语义名词必须显式并入才能参与子串组合，
+            # 否则 "Airbnb - Messages" 里的 Messages 永远译不出来。
+            "compose_sections": ["categories", "modules"],
+            # 这些词单看没问题，进组合却会改坏短语：Focus->专注模式 会把
+            # "Biome - Camera Auto Focus ROI" 变成 "相机 Auto 专注模式 ROI"。
+            # 对应的 4 个模块名已在 MODULES_EXTRA 里点名兜住。
+            "compose_exclude": ["Focus"],
+        },
+        "ui": UI,
+        "categories": categories,
+        "headers": headers,
+        "modules": modules,
+        "glossary": glossary,
+        "patterns": PATTERNS,
+    }
+    path = pathlib.Path(__file__).parent / "dict_ileapp_zh.json"
+    # newline="\n"：固定用 LF 写出，否则 Windows 上会写成 CRLF，
+    # 与仓库里的版本产生无意义的行尾 diff。
+    path.write_text(json.dumps(out, ensure_ascii=False, indent=1),
+                    encoding="utf-8", newline="\n")
+    print(json.dumps(out["_meta"], ensure_ascii=False, indent=2))
+    print(f"\nwritten: {path}")
+
+
+if __name__ == "__main__":
+    main()

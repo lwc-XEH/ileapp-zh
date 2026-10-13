@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------- Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# -------------------------------------------- 运行产物（每次跑都会重新生成）
+e2e/
+e2e_wb/
+report_out/
+示例-中文报告/
+工作台配置.json
+翻译对照表.csv
+_miss_*.txt
+
+# ---------------------- iLEAPP 本体与源码（体积大，且不是本仓库的内容）
+# 本仓库只是 iLEAPP 的外挂汉化工具，不打包 iLEAPP。
+# 需要时请自行下载：https://github.com/abrignoni/iLEAPP
+src/
+iLEAPP-*.zip
+iLEAPP-*/
+ileapp.exe
+_internal/
+
+# ------------------------------------------------------------ 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
